@@ -1,0 +1,11 @@
+kind: RoleBinding
+apiVersion: rbac.authorization.k8s.io/v1
+metadata:
+  name: atop-debug
+subjects:
+- kind: ServiceAccount
+  name: atop-debug
+roleRef:
+  kind: Role
+  name: atop-debug
+  apiGroup: rbac.authorization.k8s.io

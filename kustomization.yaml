@@ -1,0 +1,11 @@
+---
+namespace: atop-debug
+commonLabels:
+  app: atop-debug
+
+resources:
+- resources/daemonset.yaml
+- resources/namespace.yaml
+- resources/role.yaml
+- resources/role_binding.yaml
+- resources/service_account.yaml

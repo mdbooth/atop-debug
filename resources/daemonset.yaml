@@ -1,0 +1,81 @@
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: atop-debug
+spec:
+  selector:
+    matchLabels:
+      app: atop-debug
+  template:
+    metadata:
+      labels:
+        app: atop-debug
+      name: atop-debug
+    spec:
+      serviceAccountName: atop-debug
+      hostPID: true
+      initContainers:
+      - name: directory-permission
+        image: quay.io/mbooth/atop@sha256:52392e168dd77495b372268113a06c9979ce2cd9be1daf0226106a514383c903
+        command:
+        - /bin/bash
+        args:
+          - "-c"
+          - |
+            # Fix mode 0755 set by DirectoryOrCreate
+            chmod 0700 /data
+        volumeMounts:
+        - mountPath: /data
+          name: logdir
+      containers:
+      - name: atop
+        image: quay.io/mbooth/atop@sha256:52392e168dd77495b372268113a06c9979ce2cd9be1daf0226106a514383c903
+        command:
+        - /bin/bash
+        args:
+        - "-c"
+        - |
+          set -x
+
+          while true; do
+              # Delete all but the most recent 2 log files
+              ls -1tr /data | head -n -2 | while read f; do rm "$f"; done
+
+              # Write to a file containing today's date
+              # Log at 10 second intervals
+              # Terminate at midnight
+              /usr/bin/atop -w /data/atop_$(date +%Y%m%d) -S 10
+          done
+        imagePullPolicy: IfNotPresent
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          runAsNonRoot: false
+          readOnlyRootFilesystem: true
+          capabilities:
+            add:
+              - SYS_PTRACE
+              - SYS_PACCT
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /data
+          name: logdir
+        - mountPath: /var/cache/
+          name: pacct
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - operator: Exists
+      volumes:
+      - name: logdir
+        hostPath:
+          path: /var/tmp/atop-debug
+          type: DirectoryOrCreate
+      - name: pacct
+        emptyDir: {}
