@@ -38,14 +38,23 @@ spec:
           set -x
 
           while true; do
-              # Delete all but the most recent 2 log files
-              ls -1tr /data | head -n -2 | while read f; do rm "$f"; done
+              # Delete all but the most recent KEEP_LOG_DAYS log files
+              ls -1tr /data | head -n "-${KEEP_LOG_DAYS}" | while read f; do rm "$f"; done
 
               # Write to a file containing today's date
-              # Log at 10 second intervals
+              # Log at INTERVAL_SECS intervals
               # Terminate at midnight
-              /usr/bin/atop -w /data/atop_$(date +%Y%m%d) -S 10
+              /usr/bin/atop -w /data/atop_$(date +%Y%m%d) -S "${INTERVAL_SECS}"
+
+              # atop exits when then next sample would be after midnight
+              # sleep for 1 interval to ensure we're after midnight
+              sleep "${INTERVAL_SECS}"
           done
+        env:
+        - name: INTERVAL_SECS
+          value: "10"
+        - name: KEEP_LOG_DAYS
+          value: "4"
         imagePullPolicy: IfNotPresent
         resources:
           requests:
