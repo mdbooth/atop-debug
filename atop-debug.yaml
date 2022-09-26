@@ -1,0 +1,142 @@
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    app: atop-debug
+  name: atop-debug
+---
+apiVersion: v1
+automountServiceAccountToken: false
+kind: ServiceAccount
+metadata:
+  labels:
+    app: atop-debug
+  name: atop-debug
+  namespace: atop-debug
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  labels:
+    app: atop-debug
+  name: atop-debug
+  namespace: atop-debug
+rules:
+- apiGroups:
+  - security.openshift.io
+  resourceNames:
+  - privileged
+  resources:
+  - securitycontextconstraints
+  verbs:
+  - use
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  labels:
+    app: atop-debug
+  name: atop-debug
+  namespace: atop-debug
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: atop-debug
+subjects:
+- kind: ServiceAccount
+  name: atop-debug
+  namespace: atop-debug
+---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  labels:
+    app: atop-debug
+  name: atop-debug
+  namespace: atop-debug
+spec:
+  selector:
+    matchLabels:
+      app: atop-debug
+  template:
+    metadata:
+      labels:
+        app: atop-debug
+      name: atop-debug
+    spec:
+      containers:
+      - args:
+        - -c
+        - |
+          set -x
+
+          while true; do
+              # Delete all but the most recent KEEP_LOG_DAYS log files
+              ls -1tr /data | head -n "-${KEEP_LOG_DAYS}" | while read f; do rm "$f"; done
+
+              # Write to a file containing today's date
+              # Log at INTERVAL_SECS intervals
+              # Terminate at midnight
+              /usr/bin/atop -w /data/atop_$(date +%Y%m%d) -S "${INTERVAL_SECS}"
+
+              # atop exits when then next sample would be after midnight
+              # sleep for 1 interval to ensure we're after midnight
+              sleep "${INTERVAL_SECS}"
+          done
+        command:
+        - /bin/bash
+        env:
+        - name: INTERVAL_SECS
+          value: "10"
+        - name: KEEP_LOG_DAYS
+          value: "4"
+        image: quay.io/mbooth/atop@sha256:52392e168dd77495b372268113a06c9979ce2cd9be1daf0226106a514383c903
+        imagePullPolicy: IfNotPresent
+        name: atop
+        resources:
+          requests:
+            cpu: 100m
+            memory: 100Mi
+        securityContext:
+          capabilities:
+            add:
+            - SYS_PTRACE
+            - SYS_PACCT
+          readOnlyRootFilesystem: true
+          runAsNonRoot: false
+        terminationMessagePath: /dev/termination-log
+        terminationMessagePolicy: FallbackToLogsOnError
+        volumeMounts:
+        - mountPath: /data
+          name: logdir
+        - mountPath: /var/cache/
+          name: pacct
+      hostPID: true
+      initContainers:
+      - args:
+        - -c
+        - |
+          # Fix mode 0755 set by DirectoryOrCreate
+          chmod 0700 /data
+        command:
+        - /bin/bash
+        image: quay.io/mbooth/atop@sha256:52392e168dd77495b372268113a06c9979ce2cd9be1daf0226106a514383c903
+        name: directory-permission
+        volumeMounts:
+        - mountPath: /data
+          name: logdir
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      priorityClassName: system-node-critical
+      restartPolicy: Always
+      serviceAccountName: atop-debug
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - operator: Exists
+      volumes:
+      - hostPath:
+          path: /var/tmp/atop-debug
+          type: DirectoryOrCreate
+        name: logdir
+      - emptyDir: {}
+        name: pacct
